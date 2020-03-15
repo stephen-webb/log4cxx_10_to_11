@@ -1,0 +1,490 @@
+#include "CppFile.h"
+#include <fstream>
+#include <string>
+#include <log4cxx/logger.h>
+#include <ctype.h>
+
+#ifdef _MSC_VER
+#pragma warning (disable : 4996) // sprintf is used in boost::wave
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+//  Include Wave itself
+#include <boost/wave.hpp>
+
+///////////////////////////////////////////////////////////////////////////////
+// Include the lexer stuff
+#include <boost/wave/util/flex_string.hpp>
+#include <boost/wave/cpplexer/cpp_lex_token.hpp>
+#include <boost/wave/cpplexer/cpp_lex_iterator.hpp>
+
+// The following file needs to be included only once throughout the whole program.
+#include <boost/wave/cpplexer/re2clex/cpp_re2c_lexer.hpp>
+
+// Processing hooks to enable single file processing
+class CppFile::CustomDirectivesHooks
+    : public boost::wave::context_policies::default_preprocessing_hooks
+{
+public: // Hooked methods
+    // Prevent include processing
+    template <typename ContextT>
+    bool found_include_directive
+        ( ContextT const&    ctx
+        , std::string const& filename
+        , bool               include_next
+        )
+    {
+        LOG4CXX_TRACE(log_s, "include " << filename);
+        return true;    // skip all #includes
+    }
+    // general hook functions
+    template <typename ContextT, typename TokenT>
+    bool found_directive(ContextT const &ctx, TokenT const &directive)
+    {
+        LOG4CXX_TRACE(log_s, "directive " << directive.get_value());
+        return true;    // skip all directives
+    }
+};
+
+/// Boost Wave types
+typedef boost::wave::util::file_position<BOOST_WAVE_STRINGTYPE> PositionType;
+typedef boost::wave::cpplexer::lex_token<PositionType> TokenType;
+typedef TokenType::position_type PositionType;
+typedef boost::wave::cpplexer::lex_iterator<TokenType> lex_iterator_type;
+typedef boost::wave::context
+    < std::string::iterator
+    , lex_iterator_type
+    , boost::wave::iteration_context_policies::load_file_to_string
+    , CppFile::CustomDirectivesHooks
+    > ContextType;
+
+/// Enables output in C-style escaped characters of a string
+template <class StringType>
+struct CStringRef
+{
+    StringType const& value;
+    CStringRef(StringType const& value_)
+        : value(value_)
+        {}
+};
+
+/// Put C-style escaped characters of \c item onto \c stream
+template <class StringType>
+    std::ostream&
+operator<<(std::ostream& stream, CStringRef<StringType> const& item)
+{
+    for (std::size_t i = 0; i < item.value.size(); ++i)
+    {
+        switch (item.value[i])
+        {
+        case '\r':  stream << "\\r"; break;
+        case '\n':  stream << "\\n"; break;
+        case '\t':  stream << "\\t"; break;
+        default:
+            if (isprint(item.value[i]))
+                stream << item.value[i];
+            else
+                stream << "0x" << std::hex << int(item.value[i]);
+            break;
+        }
+    }
+    return stream;
+}
+
+/// Put attributes pointed to by \c pItem onto \c stream
+    std::ostream&
+operator<<(std::ostream& stream, ContextType::iterator_type const& pItem)
+{
+    boost::wave::token_id id = *pItem;
+    stream << boost::wave::get_token_name(id)
+        << "(#" << BASEID_FROM_TOKEN(id) << ')';
+
+    stream << ": >" << CStringRef<TokenType::string_type>(pItem->get_value()) << '<';
+    stream << " (" << pItem->get_position().get_line()
+        << ',' << pItem->get_position().get_column()
+        << ')';
+    return stream;
+}
+
+    static log4cxx::LoggerPtr
+log_s(log4cxx::Logger::getLogger("CppFile"));
+
+// Put \c item onto \c os
+    std::ostream&
+operator<<(std::ostream& stream, CppFile::IndexType const& item)
+{
+    stream << item.line << ',' << item.column;
+    return stream;
+}
+
+/// The index into \c m_content corresponding to (1-based) index.line and index.col
+    size_t
+CppFile::GetContentIndex(const IndexType& index) const
+{
+    size_t result = 0;
+    for ( size_t line = 1; line < index.line && result < m_content.size(); ++line)
+    {
+        size_t eol = m_content.find('\n', result);
+        if (m_content.npos == eol)
+            return m_content.size();
+        result = eol + 1;
+    }
+    result += index.column - 1;
+    if (m_content.size() < result)
+        result = m_content.size();
+    LOG4CXX_TRACE(log_s, "GetContentIndex: " << index << " result " << result);
+    return result;
+}
+
+/// The number of instances of the identifier \c name
+    size_t
+CppFile::GetIdentifierCount(const StringType& name) const
+{
+    size_t result = 0;
+    StringPositionMap::const_iterator pItem = m_identiferPositions.find(name);
+    if (m_identiferPositions.end() != pItem)
+        result = pItem->second.size();
+    return result;
+}
+
+/// The number of function call style usages of the identifier \c name
+    size_t
+CppFile::GetFunctionCount(const StringType& name) const
+{
+    size_t result = 0;
+    StringPositionMap::const_iterator pItem = m_identiferPositions.find(name);
+    if (m_identiferPositions.end() == pItem)
+        ;
+    else for (size_t i = 0; i < pItem->second.size(); ++i)
+    {
+        boost::wave::token_id tokenId = GetNonWhitespaceTokenAfter(pItem->second[i]);
+        if (boost::wave::T_LEFTPAREN == tokenId)
+            ++result;
+    }
+    return result;
+}
+
+/// The id (and optionally position) of the first compiler token before \c index
+    boost::wave::token_id
+CppFile::GetNonWhitespaceTokenBefore(const IndexType& index, IndexType* resultIndex) const
+{
+    boost::wave::token_id result = boost::wave::T_EOI;
+    IndexedToken::const_iterator pItem = m_tokenPositions.lower_bound(index);
+    while (m_tokenPositions.end() != pItem && (pItem->first == index
+        || IS_CATEGORY(pItem->second, boost::wave::WhiteSpaceTokenType)
+        || IS_CATEGORY(pItem->second, boost::wave::EOLTokenType) ))
+      --pItem;
+    if (m_tokenPositions.end() != pItem)
+    {
+        LOG4CXX_TRACE(log_s, "GetNonWhitespaceTokenBefore: " << index
+            << " token " << boost::wave::get_token_name(pItem->second)
+            << " at " << pItem->first
+            );
+        if (resultIndex)
+            *resultIndex = pItem->first;
+        result = pItem->second;
+    }
+    return result;
+}
+
+/// The id (and optionally position) of the first compiler token after \c index
+    boost::wave::token_id
+CppFile::GetNonWhitespaceTokenAfter(const IndexType& index, IndexType* resultIndex) const
+{
+    boost::wave::token_id result = boost::wave::T_EOI;
+    IndexedToken::const_iterator pItem = m_tokenPositions.upper_bound(index);
+    while (m_tokenPositions.end() != pItem && (pItem->first == index
+        || IS_CATEGORY(pItem->second, boost::wave::WhiteSpaceTokenType)
+        || IS_CATEGORY(pItem->second, boost::wave::EOLTokenType) ))
+      ++pItem;
+    if (m_tokenPositions.end() != pItem)
+    {
+        LOG4CXX_TRACE(log_s, "GetNonWhitespaceTokenAfter: " << index
+            << " token " << boost::wave::get_token_name(pItem->second)
+            << " at " << pItem->first
+            );
+        if (resultIndex)
+            *resultIndex = pItem->first;
+        result = pItem->second;
+    }
+    return result;
+}
+
+/// Has this been loaded?
+    bool
+CppFile::IsValid() const
+{
+    return !m_tokenPositions.empty();
+}
+
+/// Load \c read into various indexing attributes
+    bool
+CppFile::LoadFile(const PathType& path)
+{
+    LOG4CXX_DEBUG(log_s, "LoadFile: " << path);
+    std::ifstream instream(path.c_str());
+    if (!instream.is_open())
+        return false;
+    instream.unsetf(std::ios::skipws);
+    bool ok = false;
+    PositionType current_position;
+    try
+    {
+        m_content = std::string
+            ( std::istreambuf_iterator<char>(instream.rdbuf())
+            , std::istreambuf_iterator<char>()
+            );
+        LOG4CXX_TRACE(log_s, "LoadFile: contentSize " << m_content.size());
+        CustomDirectivesHooks hooks;
+        ContextType ctx(m_content.begin(), m_content.end(), path.string().c_str(), hooks);
+        ContextType::iterator_type first = ctx.begin();
+        ContextType::iterator_type last = ctx.end();
+        std::vector<IndexType> parenStack;
+        while (first != last)
+        {
+            LOG4CXX_TRACE(log_s, first);
+            boost::wave::token_id tokenId = *first;
+            current_position = first->get_position();
+            IndexType index{current_position.get_line(), current_position.get_column()};
+            m_tokenPositions[index] = tokenId;
+            if (boost::wave::T_LEFTPAREN == tokenId)
+                parenStack.push_back(index);
+            else if (boost::wave::T_RIGHTPAREN == tokenId && !parenStack.empty())
+            {
+                LOG4CXX_TRACE(log_s, "LeftParen " << parenStack.back());
+                m_parenMate[index] = parenStack.back();
+                m_parenMate[parenStack.back()] = index;
+                parenStack.pop_back();
+            }
+            else if (boost::wave::T_IDENTIFIER == tokenId)
+            {
+                StringType identifier = first->get_value().c_str();
+                m_identiferPositions[identifier].push_back(index);
+            }
+            ++first;
+        }
+        ok = true;
+    }
+    catch (boost::wave::cpp_exception const& e)
+    {
+        LOG4CXX_WARN(log_s, e.description()
+            << " at " << e.file_name()
+            << '(' << e.line_no() << ')'
+            );
+    }
+    catch (std::exception const& e)
+    {
+        LOG4CXX_WARN(log_s, e.what()
+            << " at " << current_position.get_file()
+            << '(' << current_position.get_line() << ')'
+            );
+    }
+    catch (...)
+    {
+        LOG4CXX_WARN(log_s, "unexpected exception caught"
+            << " at " << current_position.get_file()
+            << '(' << current_position.get_line() << ')'
+            );
+    }
+    return ok;
+}
+
+/// Write the (possibly) modified content to \c path
+    bool
+CppFile::StoreFile(const PathType& path)
+{
+    LOG4CXX_DEBUG(log_s, "StoreFile: " << path);
+    std::ofstream stream(path.c_str());
+    Store(stream);
+    stream.close();
+    return !stream.bad();
+}
+
+/// Write the (possibly) modified content to \c os
+    void
+CppFile::Store(std::ostream& os)
+{
+    size_t outIndex = 0;
+    for (UpdateMap::const_iterator pUpdate = m_updates.begin()
+        ; pUpdate != m_updates.end()
+        ; ++pUpdate)
+    {
+        LOG4CXX_TRACE(log_s, "Store: at " << pUpdate->first);
+        const EditType& editType = pUpdate->second.type;
+        size_t copyToIndex = pUpdate->second.at;
+        if (outIndex < copyToIndex)
+        {
+            LOG4CXX_TRACE(log_s, "Store: copy " << outIndex << " to " << copyToIndex);
+            os << m_content.substr(outIndex, copyToIndex - outIndex);
+        }
+        if (Delete != editType)
+        {
+            LOG4CXX_TRACE(log_s, "Store: insert " << CStringRef<StringType>(pUpdate->second.text));
+            os << pUpdate->second.text;
+        }
+        outIndex = pUpdate->second.resumeAt;
+    }
+    if (outIndex < m_content.size())
+    {
+        LOG4CXX_TRACE(log_s, "Store: copy " << outIndex << " to " << m_content.size());
+        os << m_content.substr(outIndex);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// FunctionIterator implementation
+
+/// An Off() iterator for function call names starting with \c prefix
+CppFile::FunctionIterator::FunctionIterator(CppFile& file, const StringType& prefix)
+    : m_file(file)
+    , m_prefix(prefix)
+    , m_identifier(m_file.m_identiferPositions.end())
+{}
+
+/// Add a semicolan after the closing parenthesis
+    void
+CppFile::FunctionIterator::AddSemicolon()
+{
+    LOG4CXX_DEBUG(log_s, "AddSemicolon: " << m_item.paramEnd);
+    size_t contentIndex = m_file.GetContentIndex(m_item.paramEnd) + 1;
+    UpdateData newSemicolon = {contentIndex, Insert, ";", contentIndex};
+    m_file.m_updates[m_item.paramEnd] = newSemicolon;
+}
+
+/// Add an opening before the function and a closing brace after the statement
+    void
+CppFile::FunctionIterator::InsertBraces()
+{
+    LOG4CXX_DEBUG(log_s, "InsertBraces: " << m_item.identifier << " to " << m_item.paramEnd.line);
+    IndexType previousToken;
+    m_file.GetNonWhitespaceTokenBefore(m_item.identifier, &previousToken);
+    StringType indent;
+    if (previousToken.line < m_item.identifier.line)
+    {
+        IndexType startOfPreviousLine = {previousToken.line, 1};
+        IndexType firstTokenOfPreviousLine;
+        m_file.GetNonWhitespaceTokenAfter(startOfPreviousLine, &firstTokenOfPreviousLine);
+        size_t previousIndex[2] =
+            { m_file.GetContentIndex(startOfPreviousLine)
+            , m_file.GetContentIndex(firstTokenOfPreviousLine)
+            };
+        indent = m_file.m_content.substr(previousIndex[0], previousIndex[1] - previousIndex[0]);
+        IndexType startOfLine = {m_item.identifier.line, 1};
+        size_t contentIndex = m_file.GetContentIndex(startOfLine);
+        UpdateData newLeftBrace = {contentIndex, Insert, indent + "{\n", contentIndex};
+        m_file.m_updates[startOfLine] = newLeftBrace;
+    }
+    else
+    {
+        size_t contentIndex = m_file.GetContentIndex(m_item.identifier);
+        UpdateData newLeftBrace = {contentIndex, Insert, "{ ", contentIndex};
+        m_file.m_updates[m_item.identifier] = newLeftBrace;
+    }
+    IndexType nextToken;
+    m_file.GetNonWhitespaceTokenAfter(m_item.paramEnd, &nextToken);
+    if (m_item.identifier.line < nextToken.line)
+    {
+        IndexType startOfNextLine = {m_item.paramEnd.line + 1, 1};
+        size_t contentIndex = m_file.GetContentIndex(startOfNextLine);
+        UpdateData newRightBrace = {contentIndex, Insert, indent + "}\n", contentIndex};
+        m_file.m_updates[startOfNextLine] = newRightBrace;
+    }
+    else
+    {
+        size_t contentIndex = m_file.GetContentIndex(m_item.paramEnd) + 1;
+        UpdateData newRightBrace = {contentIndex, Insert, " }", contentIndex};
+        m_file.m_updates[m_item.paramEnd] = newRightBrace;
+    }
+}
+
+/// Is the next non-white-space token a semicolon or comma? - Precondition: !Off()
+    bool
+CppFile::FunctionIterator::HasStatementTerminator() const
+{
+    boost::wave::token_id tokenId = m_file.GetNonWhitespaceTokenAfter(m_item.paramEnd);
+    return boost::wave::T_SEMICOLON == tokenId ||
+           boost::wave::T_COLON == tokenId ||
+           boost::wave::T_COMMA == tokenId;
+}
+
+/// Is the previous non-white-space token not in [else, comma, semicolon, brace]? - Precondition: !Off()
+    bool
+CppFile::FunctionIterator::IsBlock() const
+{
+    boost::wave::token_id tokenId = m_file.GetNonWhitespaceTokenBefore(m_item.identifier);
+    return boost::wave::T_ELSE != tokenId &&
+           boost::wave::T_LEFTBRACE != tokenId &&
+           boost::wave::T_RIGHTBRACE != tokenId &&
+           boost::wave::T_COLON != tokenId &&
+           boost::wave::T_SEMICOLON != tokenId &&
+           boost::wave::T_COMMA != tokenId;
+}
+
+/// Move to the next item. Precondition: !Off()
+    void
+CppFile::FunctionIterator::Forth()
+{
+    ++m_instance;
+    while (!OffInstance())
+    {
+        if (SetItem())
+            return;
+        ++m_instance;
+    }
+    ++m_identifier;
+    StartInstance();
+}
+
+// Is this iterator beyond the end or before the start?
+    bool
+CppFile::FunctionIterator::Off() const
+{
+    return m_file.m_identiferPositions.end() == m_identifier ||
+        0 != m_identifier->first.compare(0, m_prefix.size(), m_prefix);
+}
+
+// Set \c m_item - Precondition: !OffInstance()
+    bool
+CppFile::FunctionIterator::SetItem()
+{
+    m_item.identifier = *m_instance;
+    boost::wave::token_id tokenId = m_file.GetNonWhitespaceTokenAfter(*m_instance, &m_item.paramStart);
+    if (boost::wave::T_LEFTPAREN != tokenId)
+        return false;
+    IndexMap::const_iterator closeParen = m_file.m_parenMate.find(m_item.paramStart);
+    if (m_file.m_parenMate.end() == closeParen)
+        return false;
+    m_item.paramEnd = closeParen->second;
+    LOG4CXX_DEBUG(log_s, m_identifier->first
+        << " at " << m_item.identifier
+        << " to " << m_item.paramEnd
+        );
+    return true;
+}
+
+// Move to the first item
+    void
+CppFile::FunctionIterator::Start()
+{
+    LOG4CXX_DEBUG(log_s, "Start: " << m_prefix);
+    m_identifier = m_file.m_identiferPositions.lower_bound(m_prefix);
+    StartInstance();
+}
+
+// Move to the first instance of the selected identifier
+    void
+CppFile::FunctionIterator::StartInstance()
+{
+    while (!Off())
+    {
+        m_instance = m_identifier->second.begin();
+        m_instanceEnd = m_identifier->second.end();
+        while (!OffInstance())
+        {
+            if (SetItem())
+                return;
+            ++m_instance;
+        }
+        ++m_identifier;
+    }
+}
