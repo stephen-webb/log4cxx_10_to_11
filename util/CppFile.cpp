@@ -210,7 +210,7 @@ CppFile::GetNonWhitespaceTokenAfter(const PositionType& index, PositionType* res
     bool
 CppFile::IsValid() const
 {
-    return m_processed.line == m_lineIndex.size();
+    return m_lineIndex.size() - 1 <= m_processed.line;
 }
 
 /// Load \c read into various indexing attributes
@@ -233,6 +233,7 @@ CppFile::LoadFile(const PathType& path)
         SetLineIndex();
         CustomDirectivesHooks hooks;
         ContextType ctx(m_content.begin(), m_content.end(), path.string().c_str(), hooks);
+        ctx.set_language(boost::wave::enable_preserve_comments(ctx.get_language()));
         ContextType::iterator_type first = ctx.begin();
         ContextType::iterator_type last = ctx.end();
         std::vector<PositionType> parenStack;
@@ -256,6 +257,10 @@ CppFile::LoadFile(const PathType& path)
             {
                 StringType identifier = first->get_value().c_str();
                 m_identiferPositions[identifier].push_back(m_processed);
+            }
+            else if (boost::wave::T_CCOMMENT == tokenId)
+            {
+                m_processed.line += boost::wave::context_policies::util::ccomment_count_newlines(*first);
             }
             ++first;
         }
