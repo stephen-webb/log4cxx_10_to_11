@@ -226,6 +226,9 @@ CppFile::LoadFile(const PathType& path)
     position_type current_position;
     try
     {
+        m_identiferPositions.clear();
+        m_parenMate.clear();
+        m_tokenPositions.clear();
         m_content = std::string
             ( std::istreambuf_iterator<char>(instream.rdbuf())
             , std::istreambuf_iterator<char>()
@@ -294,6 +297,7 @@ CppFile::LoadFile(const PathType& path)
     void
 CppFile::SetLineIndex()
 {
+    m_lineIndex.clear();
     m_lineIndex.push_back(0);
     for (;;)
     {
