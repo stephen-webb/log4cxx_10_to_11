@@ -2,7 +2,7 @@
 #define BOOST_TEST_NO_MAIN
 #include <boost/test/unit_test.hpp>
 #include <log4cxx/propertyconfigurator.h>
-#include "CppFile.h"
+#include "util/CppFile.h"
 
 BOOST_AUTO_TEST_CASE( fixup_test )
 {

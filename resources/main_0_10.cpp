@@ -35,7 +35,9 @@ int main(int ac, char** av)
     greeting =  std::string(greeting.size(),'-') + '\n' + greeting + '\n' + std::string(greeting.size(),'-');
     LOG4CXX_INFO(myLog, "\n\n" << greeting)
     if (2 < ac)
-        LOG4CXX_DEBUG(myLog, "av[1]=" << av[1] << " av[2]=" << av[2]) // This needs a ; for 0.11
+        LOG4CXX_DEBUG(myLog, "av[1]=" << av[1]
+            << " av[2)=" << av[(1+1)]
+            ) // This needs a ; for 0.11
     else if (1 < ac)
         LOG4CXX_DEBUG(myLog, "av[1]=" << av[1]) // This needs a ; for 0.11
     else

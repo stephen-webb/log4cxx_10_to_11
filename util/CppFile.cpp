@@ -21,12 +21,12 @@
 // The following file needs to be included only once throughout the whole program.
 #include <boost/wave/cpplexer/re2clex/cpp_re2c_lexer.hpp>
 
-// Processing hooks to enable single file processing
+/// Processing hooks that enable single file processing
 class CppFile::CustomDirectivesHooks
     : public boost::wave::context_policies::default_preprocessing_hooks
 {
 public: // Hooked methods
-    // Prevent include processing
+    /// Prevent include processing
     template <typename ContextT>
     bool found_include_directive
         ( ContextT const&    ctx
@@ -37,7 +37,7 @@ public: // Hooked methods
         LOG4CXX_TRACE(log_s, "include " << filename);
         return true;    // skip all #includes
     }
-    // general hook functions
+    /// Prevent directive processing
     template <typename ContextT, typename TokenT>
     bool found_directive(ContextT const &ctx, TokenT const &directive)
     {
@@ -47,9 +47,8 @@ public: // Hooked methods
 };
 
 /// Boost Wave types
-typedef boost::wave::util::file_position<BOOST_WAVE_STRINGTYPE> PositionType;
-typedef boost::wave::cpplexer::lex_token<PositionType> TokenType;
-typedef TokenType::position_type PositionType;
+typedef boost::wave::util::file_position<BOOST_WAVE_STRINGTYPE> position_type;
+typedef boost::wave::cpplexer::lex_token<position_type> TokenType;
 typedef boost::wave::cpplexer::lex_iterator<TokenType> lex_iterator_type;
 typedef boost::wave::context
     < std::string::iterator
@@ -106,12 +105,15 @@ operator<<(std::ostream& stream, ContextType::iterator_type const& pItem)
     return stream;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+//  CppFile implementation
+
     static log4cxx::LoggerPtr
 log_s(log4cxx::Logger::getLogger("CppFile"));
 
 // Put \c item onto \c os
     std::ostream&
-operator<<(std::ostream& stream, CppFile::IndexType const& item)
+operator<<(std::ostream& stream, CppFile::PositionType const& item)
 {
     stream << item.line << ',' << item.column;
     return stream;
@@ -119,18 +121,12 @@ operator<<(std::ostream& stream, CppFile::IndexType const& item)
 
 /// The index into \c m_content corresponding to (1-based) index.line and index.col
     size_t
-CppFile::GetContentIndex(const IndexType& index) const
+CppFile::GetContentIndex(const PositionType& index) const
 {
-    size_t result = 0;
-    for ( size_t line = 1; line < index.line && result < m_content.size(); ++line)
-    {
-        size_t eol = m_content.find('\n', result);
-        if (m_content.npos == eol)
-            return m_content.size();
-        result = eol + 1;
-    }
-    result += index.column - 1;
-    if (m_content.size() < result)
+    size_t result;
+    if (0 < index.line && index.line <= m_lineIndex.size())
+        result = m_lineIndex[index.line - 1] + index.column - 1;
+    else
         result = m_content.size();
     LOG4CXX_TRACE(log_s, "GetContentIndex: " << index << " result " << result);
     return result;
@@ -166,7 +162,7 @@ CppFile::GetFunctionCount(const StringType& name) const
 
 /// The id (and optionally position) of the first compiler token before \c index
     boost::wave::token_id
-CppFile::GetNonWhitespaceTokenBefore(const IndexType& index, IndexType* resultIndex) const
+CppFile::GetNonWhitespaceTokenBefore(const PositionType& index, PositionType* resultIndex) const
 {
     boost::wave::token_id result = boost::wave::T_EOI;
     IndexedToken::const_iterator pItem = m_tokenPositions.lower_bound(index);
@@ -189,7 +185,7 @@ CppFile::GetNonWhitespaceTokenBefore(const IndexType& index, IndexType* resultIn
 
 /// The id (and optionally position) of the first compiler token after \c index
     boost::wave::token_id
-CppFile::GetNonWhitespaceTokenAfter(const IndexType& index, IndexType* resultIndex) const
+CppFile::GetNonWhitespaceTokenAfter(const PositionType& index, PositionType* resultIndex) const
 {
     boost::wave::token_id result = boost::wave::T_EOI;
     IndexedToken::const_iterator pItem = m_tokenPositions.upper_bound(index);
@@ -214,7 +210,7 @@ CppFile::GetNonWhitespaceTokenAfter(const IndexType& index, IndexType* resultInd
     bool
 CppFile::IsValid() const
 {
-    return !m_tokenPositions.empty();
+    return m_processed.line == m_lineIndex.size();
 }
 
 /// Load \c read into various indexing attributes
@@ -227,39 +223,39 @@ CppFile::LoadFile(const PathType& path)
         return false;
     instream.unsetf(std::ios::skipws);
     bool ok = false;
-    PositionType current_position;
+    position_type current_position;
     try
     {
         m_content = std::string
             ( std::istreambuf_iterator<char>(instream.rdbuf())
             , std::istreambuf_iterator<char>()
             );
-        LOG4CXX_TRACE(log_s, "LoadFile: contentSize " << m_content.size());
+        SetLineIndex();
         CustomDirectivesHooks hooks;
         ContextType ctx(m_content.begin(), m_content.end(), path.string().c_str(), hooks);
         ContextType::iterator_type first = ctx.begin();
         ContextType::iterator_type last = ctx.end();
-        std::vector<IndexType> parenStack;
+        std::vector<PositionType> parenStack;
         while (first != last)
         {
             LOG4CXX_TRACE(log_s, first);
             boost::wave::token_id tokenId = *first;
             current_position = first->get_position();
-            IndexType index{current_position.get_line(), current_position.get_column()};
-            m_tokenPositions[index] = tokenId;
+            m_processed = PositionType{current_position.get_line(), current_position.get_column()};
+            m_tokenPositions[m_processed] = tokenId;
             if (boost::wave::T_LEFTPAREN == tokenId)
-                parenStack.push_back(index);
+                parenStack.push_back(m_processed);
             else if (boost::wave::T_RIGHTPAREN == tokenId && !parenStack.empty())
             {
                 LOG4CXX_TRACE(log_s, "LeftParen " << parenStack.back());
-                m_parenMate[index] = parenStack.back();
-                m_parenMate[parenStack.back()] = index;
+                m_parenMate[m_processed] = parenStack.back();
+                m_parenMate[parenStack.back()] = m_processed;
                 parenStack.pop_back();
             }
             else if (boost::wave::T_IDENTIFIER == tokenId)
             {
                 StringType identifier = first->get_value().c_str();
-                m_identiferPositions[identifier].push_back(index);
+                m_identiferPositions[identifier].push_back(m_processed);
             }
             ++first;
         }
@@ -288,6 +284,22 @@ CppFile::LoadFile(const PathType& path)
     }
     return ok;
 }
+
+/// Initialize m_lineIndex
+    void
+CppFile::SetLineIndex()
+{
+    m_lineIndex.push_back(0);
+    for (;;)
+    {
+        size_t eol = m_content.find('\n', m_lineIndex.back());
+        if (m_content.npos == eol)
+            break;
+        m_lineIndex.push_back(eol + 1);
+    }
+    LOG4CXX_DEBUG(log_s, "SetLineIndex: contentSize " << m_content.size() << " lineCount " << m_lineIndex.size());
+}
+
 
 /// Write the (possibly) modified content to \c path
     bool
@@ -356,20 +368,20 @@ CppFile::FunctionIterator::AddSemicolon()
 CppFile::FunctionIterator::InsertBraces()
 {
     LOG4CXX_DEBUG(log_s, "InsertBraces: " << m_item.identifier << " to " << m_item.paramEnd.line);
-    IndexType previousToken;
+    PositionType previousToken;
     m_file.GetNonWhitespaceTokenBefore(m_item.identifier, &previousToken);
     StringType indent;
     if (previousToken.line < m_item.identifier.line)
     {
-        IndexType startOfPreviousLine = {previousToken.line, 1};
-        IndexType firstTokenOfPreviousLine;
+        PositionType startOfPreviousLine = {previousToken.line, 1};
+        PositionType firstTokenOfPreviousLine;
         m_file.GetNonWhitespaceTokenAfter(startOfPreviousLine, &firstTokenOfPreviousLine);
         size_t previousIndex[2] =
             { m_file.GetContentIndex(startOfPreviousLine)
             , m_file.GetContentIndex(firstTokenOfPreviousLine)
             };
         indent = m_file.m_content.substr(previousIndex[0], previousIndex[1] - previousIndex[0]);
-        IndexType startOfLine = {m_item.identifier.line, 1};
+        PositionType startOfLine = {m_item.identifier.line, 1};
         size_t contentIndex = m_file.GetContentIndex(startOfLine);
         UpdateData newLeftBrace = {contentIndex, Insert, indent + "{\n", contentIndex};
         m_file.m_updates[startOfLine] = newLeftBrace;
@@ -380,11 +392,11 @@ CppFile::FunctionIterator::InsertBraces()
         UpdateData newLeftBrace = {contentIndex, Insert, "{ ", contentIndex};
         m_file.m_updates[m_item.identifier] = newLeftBrace;
     }
-    IndexType nextToken;
+    PositionType nextToken;
     m_file.GetNonWhitespaceTokenAfter(m_item.paramEnd, &nextToken);
     if (m_item.identifier.line < nextToken.line)
     {
-        IndexType startOfNextLine = {m_item.paramEnd.line + 1, 1};
+        PositionType startOfNextLine = {m_item.paramEnd.line + 1, 1};
         size_t contentIndex = m_file.GetContentIndex(startOfNextLine);
         UpdateData newRightBrace = {contentIndex, Insert, indent + "}\n", contentIndex};
         m_file.m_updates[startOfNextLine] = newRightBrace;

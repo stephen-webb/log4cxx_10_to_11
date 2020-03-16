@@ -10,14 +10,14 @@ class CppFile
 public: // Types
     typedef boost::filesystem::path PathType;
     typedef std::string StringType;
-    struct IndexType
+    struct PositionType
     {
         size_t line, column;
-        bool operator<(IndexType const& other) const
+        bool operator<(PositionType const& other) const
         {
             return line < other.line || (line == other.line && column < other.column);
         }
-        bool operator==(IndexType const& other) const
+        bool operator==(PositionType const& other) const
         {
             return line == other.line && column == other.column;
         }
@@ -26,10 +26,10 @@ public: // Types
     class CustomDirectivesHooks;
 
 protected: // Types
-    typedef std::map<IndexType, boost::wave::token_id> IndexedToken;
-    typedef std::map<IndexType, IndexType> IndexMap;
-    typedef std::vector<IndexType> IndexStore;
-    typedef std::map<StringType, IndexStore> StringPositionMap;
+    typedef std::map<PositionType, boost::wave::token_id> IndexedToken;
+    typedef std::map<PositionType, PositionType> IndexMap;
+    typedef std::vector<PositionType> PositionStore;
+    typedef std::map<StringType, PositionStore> StringPositionMap;
     enum EditType { Delete, Insert, Modify };
     struct UpdateData
     {
@@ -38,14 +38,22 @@ protected: // Types
         StringType text;
         size_t     resumeAt;
     };
-    typedef std::map<IndexType, UpdateData> UpdateMap;
+    typedef std::map<PositionType, UpdateData> UpdateMap;
+    typedef std::vector<size_t> IndexStore;
 
 private: // Attributes
     std::string m_content;
+    IndexStore m_lineIndex;
+    PositionType m_processed;
     IndexedToken m_tokenPositions;
     IndexMap m_parenMate;
     StringPositionMap m_identiferPositions;
     UpdateMap m_updates;
+
+public: // ...structors
+    CppFile() {}
+    CppFile(const PathType& path)
+    { LoadFile(path); }
 
 public: // Accessors
     size_t GetIdentifierCount(const StringType& name) const;
@@ -58,9 +66,10 @@ public: // Modifiers
     void Store(std::ostream& os);
 
 protected: // Support methods
-    size_t GetContentIndex(const IndexType& index) const;
-    boost::wave::token_id GetNonWhitespaceTokenAfter(const IndexType& index, IndexType* resultIndex = 0) const;
-    boost::wave::token_id GetNonWhitespaceTokenBefore(const IndexType& index, IndexType* resultIndex = 0) const;
+    size_t GetContentIndex(const PositionType& index) const;
+    boost::wave::token_id GetNonWhitespaceTokenAfter(const PositionType& index, PositionType* resultIndex = 0) const;
+    boost::wave::token_id GetNonWhitespaceTokenBefore(const PositionType& index, PositionType* resultIndex = 0) const;
+    void SetLineIndex();
 };
 
 /// Allows operations to be selectively performed on matched function call style instances
@@ -70,9 +79,9 @@ public: // Types
     //!< The current item
     struct ItemType
     {
-        IndexType identifier;
-        IndexType paramStart;
-        IndexType paramEnd;
+        PositionType identifier;
+        PositionType paramStart;
+        PositionType paramEnd;
     };
 
 private: // Attributes
@@ -80,8 +89,8 @@ private: // Attributes
     StringType m_prefix; //!< Of the function of interest
     ItemType m_item; //!< The current item
     StringPositionMap::const_iterator m_identifier; //!< Position in the identifier map
-    IndexStore::const_iterator m_instance; //!< Position in the instances of the current identifier
-    IndexStore::const_iterator m_instanceEnd; //!< Sentinal of the instances of the current identifier
+    PositionStore::const_iterator m_instance; //!< Position in the instances of the current identifier
+    PositionStore::const_iterator m_instanceEnd; //!< Sentinal of the instances of the current identifier
 
 public: // ...structors
     /// An Off() iterator for function call names starting with \c prefix
