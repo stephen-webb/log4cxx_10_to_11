@@ -24,13 +24,14 @@ Synopsis
 
 log4cxx_10_to_11 {options} {file_or_directory_list}
 
-  -h [ --help ]         produce help message
-  -q [ --quiet ]        do not print file names
-  -v [ --verbose ]      list the number of macros to be adjusted in each file
-  --only_11             modify files to work with 0.11
-  --both_10_and_11      modify files to work with 0.10 and 0.11
-  -e [ --ext ] arg      add to the list of checked file extensions: default
-                        [.cpp, .cxx, .hpp, .h]
+Option             | Description
+-------------------|------------------------------------------------
+-h [ --help ]      |   produce help message
+-q [ --quiet ]     |   do not print file names
+-v [ --verbose ]   |   list the number of macros to be adjusted in each file
+--only_11          |   modify files to work with 0.11
+--both_10_and_11   |   modify files to work with 0.10 and 0.11
+-e [ --ext ] arg   |   add to the list of checked file extensions: default [.cpp, .cxx, .hpp, .h]
 
 Use --only_11 for code changes that may not need to compile with 0.10.
 It will change the above example to:
