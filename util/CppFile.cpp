@@ -245,8 +245,6 @@ CppFile::LoadFile(const PathType& path)
             LOG4CXX_TRACE(log_s, first);
             boost::wave::token_id tokenId = *first;
             current_position = first->get_position();
-            m_processed = PositionType{current_position.get_line(), current_position.get_column()};
-            m_tokenPositions[m_processed] = tokenId;
             if (boost::wave::T_LEFTPAREN == tokenId)
                 parenStack.push_back(m_processed);
             else if (boost::wave::T_RIGHTPAREN == tokenId && !parenStack.empty())
@@ -261,13 +259,28 @@ CppFile::LoadFile(const PathType& path)
                 StringType identifier = first->get_value().c_str();
                 m_identiferPositions[identifier].push_back(m_processed);
             }
-            else if (boost::wave::T_CCOMMENT == tokenId)
+            else if (boost::wave::T_UNKNOWN == tokenId)
             {
-                m_processed.line += boost::wave::context_policies::util::ccomment_count_newlines(*first);
+                LOG4CXX_WARN(log_s, "Unknown token (" << CStringRef<BOOST_WAVE_STRINGTYPE>(first->get_value()) << ')'
+                    << " at " << path
+                    << '(' << current_position.get_line()
+                    << ',' << current_position.get_column() << ')'
+                    );
             }
+            m_processed = PositionType{current_position.get_line(), current_position.get_column()};
+            if (boost::wave::T_CCOMMENT == tokenId)
+                m_processed.line += boost::wave::context_policies::util::ccomment_count_newlines(*first);
+            m_tokenPositions[m_processed] = tokenId;
             ++first;
         }
         ok = true;
+    }
+    catch (boost::wave::cpplexer::lexing_exception const& e)
+    {
+        LOG4CXX_WARN(log_s, e.description()
+            << " at " << e.file_name()
+            << '(' << e.line_no() << ')'
+            );
     }
     catch (boost::wave::cpp_exception const& e)
     {
