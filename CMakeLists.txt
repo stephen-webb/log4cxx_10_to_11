@@ -5,7 +5,10 @@ include(CTest)
 set(Boost_USE_STATIC_LIBS  ON)  # only find static libs
 find_package(Boost COMPONENTS wave filesystem program_options unit_test_framework REQUIRED )
 find_package(log4cxx 0.11 REQUIRED )
-if(WIN32 AND NOT BUILD_SHARED_LIB)
+
+# Add support for linking statically
+option(BUILD_SHARED_LIBS "Use dynamically linked runtime" ON)
+if(WIN32 AND NOT BUILD_SHARED_LIBS)
   foreach(flag_var
       CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
       CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
