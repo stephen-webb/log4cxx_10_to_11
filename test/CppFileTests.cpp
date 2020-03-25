@@ -1,5 +1,6 @@
 #define BOOST_TEST_MODULE log4cxx_10_to_111 test
 #define BOOST_TEST_NO_MAIN
+#define BOOST_TEST_ALTERNATIVE_INIT_API
 #include <boost/test/unit_test.hpp>
 #include <log4cxx/propertyconfigurator.h>
 #include "util/CppFile.h"
