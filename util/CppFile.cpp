@@ -160,6 +160,16 @@ CppFile::GetFunctionCount(const StringType& name) const
     return result;
 }
 
+/// Has an been made between \c start and before \c end
+    bool
+CppFile::HasUpdateBetween(const PositionType& start, const PositionType& end) const
+{
+    UpdateMap::const_iterator pUodate = m_updates.lower_bound(start);
+    bool found = m_updates.end() != pUodate && pUodate->first < end;
+    LOG4CXX_TRACE(log_s, "HasUpdateBetween: " << start << " and " << end << " found? " << found);
+    return found;
+}
+
 /// The id (and optionally position) of the first compiler token before \c index
     boost::wave::token_id
 CppFile::GetNonWhitespaceTokenBefore(const PositionType& index, PositionType* resultIndex) const
@@ -172,13 +182,13 @@ CppFile::GetNonWhitespaceTokenBefore(const PositionType& index, PositionType* re
       --pItem;
     if (m_tokenPositions.end() != pItem)
     {
+        result = pItem->second;
         LOG4CXX_TRACE(log_s, "GetNonWhitespaceTokenBefore: " << index
-            << " token " << boost::wave::get_token_name(pItem->second)
+            << " token " << boost::wave::get_token_name(result)
             << " at " << pItem->first
             );
         if (resultIndex)
             *resultIndex = pItem->first;
-        result = pItem->second;
     }
     return result;
 }
@@ -389,7 +399,7 @@ CppFile::FunctionIterator::AddSemicolon()
     void
 CppFile::FunctionIterator::InsertBraces()
 {
-    LOG4CXX_DEBUG(log_s, "InsertBraces: " << m_item.identifier << " to " << m_item.paramEnd.line);
+    LOG4CXX_DEBUG(log_s, "InsertBraces: " << m_item.identifier << " to " << m_item.paramEnd);
     PositionType previousToken;
     m_file.GetNonWhitespaceTokenBefore(m_item.identifier, &previousToken);
     StringType indent;
@@ -443,10 +453,12 @@ CppFile::FunctionIterator::HasStatementTerminator() const
 
 /// Is the previous non-white-space token not in [else, comma, semicolon, brace]? - Precondition: !Off()
     bool
-CppFile::FunctionIterator::IsBlock() const
+CppFile::FunctionIterator::IsCompoundStatementBody() const
 {
-    boost::wave::token_id tokenId = m_file.GetNonWhitespaceTokenBefore(m_item.identifier);
-    return boost::wave::T_ELSE != tokenId &&
+    PositionType previousToken;
+    boost::wave::token_id tokenId = m_file.GetNonWhitespaceTokenBefore(m_item.identifier, &previousToken);
+    return !m_file.HasUpdateBetween(previousToken, m_item.identifier) &&
+           boost::wave::T_ELSE != tokenId &&
            boost::wave::T_LEFTBRACE != tokenId &&
            boost::wave::T_RIGHTBRACE != tokenId &&
            boost::wave::T_COLON != tokenId &&

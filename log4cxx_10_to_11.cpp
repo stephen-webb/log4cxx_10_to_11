@@ -61,7 +61,7 @@ int ProcessLog4cxxMacros(CppFile& file, bool fix, bool fix_10_and_11)
             ++fixCount;
             if (fix)
                 log4cxxMacro.AddSemicolon();
-            if (fix_10_and_11 && log4cxxMacro.IsBlock())
+            if (fix_10_and_11 && log4cxxMacro.IsCompoundStatementBody())
                 log4cxxMacro.InsertBraces();
         }
     }

@@ -19,7 +19,7 @@ BOOST_AUTO_TEST_CASE( fixup_test )
     for (log4cxxMacro.Start(); !log4cxxMacro.Off(); log4cxxMacro.Forth())
     {
         ++macroCount;
-        if (log4cxxMacro.IsBlock())
+        if (log4cxxMacro.IsCompoundStatementBody())
             log4cxxMacro.InsertBraces(), ++insertBraceCount;
         else if (!log4cxxMacro.HasStatementTerminator())
             log4cxxMacro.AddSemicolon(), ++terminateStatementCount;
@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_CASE( no_change_test )
     for (log4cxxMacro.Start(); !log4cxxMacro.Off(); log4cxxMacro.Forth())
     {
         ++macroCount;
-        if (log4cxxMacro.IsBlock())
+        if (log4cxxMacro.IsCompoundStatementBody())
             ++insertBraceCount;
         else if (!log4cxxMacro.HasStatementTerminator())
             ++terminateStatementCount;

@@ -26,7 +26,8 @@ public: // Types
     class CustomDirectivesHooks;
 
 protected: // Types
-    typedef std::map<PositionType, boost::wave::token_id> IndexedToken;
+    typedef boost::wave::token_id TokenId;
+    typedef std::map<PositionType, TokenId> IndexedToken;
     typedef std::map<PositionType, PositionType> IndexMap;
     typedef std::vector<PositionType> PositionStore;
     typedef std::map<StringType, PositionStore> StringPositionMap;
@@ -69,6 +70,7 @@ protected: // Support methods
     size_t GetContentIndex(const PositionType& index) const;
     boost::wave::token_id GetNonWhitespaceTokenAfter(const PositionType& index, PositionType* resultIndex = 0) const;
     boost::wave::token_id GetNonWhitespaceTokenBefore(const PositionType& index, PositionType* resultIndex = 0) const;
+    bool HasUpdateBetween(const PositionType& start, const PositionType& end) const;
     void SetLineIndex();
 };
 
@@ -101,7 +103,7 @@ public: // Accessors
     bool HasStatementTerminator() const;
 
     /// Is the previous non-white-space token not in [else, comma, semicolon, brace]? - Precondition: !Off()
-    bool IsBlock() const;
+    bool IsCompoundStatementBody() const;
 
     /// The current item - Precondition: !Off()
     const ItemType& Item() const { return m_item; }
