@@ -14,7 +14,7 @@ typedef std::vector<StringType> StringStore;
 GetOptionDescription()
 {
     po::options_description data
-        ( "Options for checking log4cxx macro usage"
+        ( "log4cxx_10_to_11 {options} {file_or_directory_list}\n\nwhere valid options are"
         );
     data.add_options()
         ("help,h", "produce help message")
@@ -81,7 +81,8 @@ int main( int argc, char* argv[] )
         bool verbose = vm.count("verbose");
 
         if (!vm.count("file-or-dir") || vm.count("help"))
-            std::cout << GetOptionDescription() << "\n";
+            std::cout << "Requires the directory or file in which to check log4cxx macro usage.\n\n"
+                << GetOptionDescription() << "\n";
         else
         {
             log4cxx::PropertyConfigurator::configure("log4cxx_10_to_11.properties");
