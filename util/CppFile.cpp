@@ -245,6 +245,7 @@ CppFile::LoadFile(const PathType& path)
             LOG4CXX_TRACE(log_s, first);
             boost::wave::token_id tokenId = *first;
             current_position = first->get_position();
+            m_processed = PositionType{current_position.get_line(), current_position.get_column()};
             if (boost::wave::T_LEFTPAREN == tokenId)
                 parenStack.push_back(m_processed);
             else if (boost::wave::T_RIGHTPAREN == tokenId && !parenStack.empty())
@@ -267,7 +268,6 @@ CppFile::LoadFile(const PathType& path)
                     << ',' << current_position.get_column() << ')'
                     );
             }
-            m_processed = PositionType{current_position.get_line(), current_position.get_column()};
             if (boost::wave::T_CCOMMENT == tokenId)
                 m_processed.line += boost::wave::context_policies::util::ccomment_count_newlines(*first);
             m_tokenPositions[m_processed] = tokenId;
