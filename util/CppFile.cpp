@@ -163,8 +163,11 @@ CppFile::GetFunctionCount(const StringType& name) const
     bool
 CppFile::HasUpdateBetween(const PositionType& start, const PositionType& end) const
 {
-    UpdateMap::const_iterator pUodate = m_updates.lower_bound(start);
-    bool found = m_updates.end() != pUodate && pUodate->first < end;
+    static const int MaxUpdatesPerPosition = 100;
+    UpdateKey keyStart(start, -MaxUpdatesPerPosition);
+    UpdateKey keyEnd(end, MaxUpdatesPerPosition);
+    UpdateMap::const_iterator pUpdate = m_updates.lower_bound(keyStart);
+    bool found = m_updates.end() != pUpdate && pUpdate->first < keyEnd;
     LOG4CXX_TRACE(log_s, "HasUpdateBetween: " << start << " and " << end << " found? " << found);
     return found;
 }
@@ -189,6 +192,18 @@ CppFile::GetNonWhitespaceTokenBefore(const PositionType& index, PositionType* re
         if (resultIndex)
             *resultIndex = pItem->first;
     }
+    return result;
+}
+
+/// The id (and optionally position) of the first compiler token before the parenthesis matching \c index
+    boost::wave::token_id
+CppFile::GetNonWhitespaceTokenBeforeOtherParen(const PositionType& index, PositionType* resultIndex) const
+{
+    LOG4CXX_TRACE(log_s, "GetNonWhitespaceTokenBeforeOtherParen: " << index);
+    boost::wave::token_id result = boost::wave::T_EOI;
+    IndexMap::const_iterator pMate = m_parenMate.find(index);
+    if (m_parenMate.end() != pMate)
+        result = GetNonWhitespaceTokenBefore(pMate->second, resultIndex);
     return result;
 }
 
@@ -315,6 +330,32 @@ CppFile::LoadFile(const PathType& path)
     return ok;
 }
 
+/// Append \c text after \c lineCol
+    void
+CppFile::AppendText(const PositionType& lineCol, const StringType& text)
+{
+    LOG4CXX_DEBUG(log_s, "AppendText: " << CStringRef<StringType>(text) << " at " << lineCol);
+    size_t contentIndex = GetContentIndex(lineCol) + 1;
+    UpdateData newText = {contentIndex, Insert, text, contentIndex};
+    UpdateKey key(lineCol, 0);
+    while (0 < m_updates.count(key))
+        ++key.second;
+    m_updates[key] = newText;
+}
+
+/// Insert \c text before \c lineCol
+    void
+CppFile::InsertText(const PositionType& lineCol, const StringType& text)
+{
+    LOG4CXX_DEBUG(log_s, "InsertText: " << CStringRef<StringType>(text) << " at " << lineCol);
+    size_t contentIndex = GetContentIndex(lineCol);
+    UpdateData newText = {contentIndex, Insert, text, contentIndex};
+    UpdateKey key(lineCol, 0);
+    while (0 < m_updates.count(key))
+        --key.second;
+    m_updates[key] = newText;
+}
+
 /// Initialize m_lineIndex
     void
 CppFile::SetLineIndex()
@@ -352,7 +393,7 @@ CppFile::Store(std::ostream& os)
         ; pUpdate != m_updates.end()
         ; ++pUpdate)
     {
-        LOG4CXX_TRACE(log_s, "Store: at " << pUpdate->first);
+        LOG4CXX_TRACE(log_s, "Store: at " << pUpdate->first.first);
         const EditType& editType = pUpdate->second.type;
         size_t copyToIndex = pUpdate->second.at;
         if (outIndex < copyToIndex)
@@ -400,9 +441,8 @@ CppFile::FunctionIterator::AddExclusion(const StringType& identifierPrefix)
 CppFile::FunctionIterator::AddSemicolon()
 {
     LOG4CXX_DEBUG(m_log, "AddSemicolon: " << m_item.paramEnd);
-    size_t contentIndex = m_file.GetContentIndex(m_item.paramEnd) + 1;
-    UpdateData newSemicolon = {contentIndex, Insert, ";", contentIndex};
-    m_file.m_updates[m_item.paramEnd] = newSemicolon;
+    PositionType insertPos = { m_item.paramEnd.line, m_item.paramEnd.column + 1};
+    m_file.InsertText(insertPos, ";");
 }
 
 /// Add an opening before the function and a closing brace after the statement
@@ -424,31 +464,19 @@ CppFile::FunctionIterator::InsertBraces()
             };
         indent = m_file.m_content.substr(previousIndex[0], previousIndex[1] - previousIndex[0]);
         PositionType startOfLine = {m_item.identifier.line, 1};
-        size_t contentIndex = m_file.GetContentIndex(startOfLine);
-        UpdateData newLeftBrace = {contentIndex, Insert, indent + "{\n", contentIndex};
-        m_file.m_updates[startOfLine] = newLeftBrace;
+        m_file.InsertText(startOfLine, indent + "{\n");
     }
     else
-    {
-        size_t contentIndex = m_file.GetContentIndex(m_item.identifier);
-        UpdateData newLeftBrace = {contentIndex, Insert, "{ ", contentIndex};
-        m_file.m_updates[m_item.identifier] = newLeftBrace;
-    }
+        m_file.InsertText(m_item.identifier, "{");
     PositionType nextToken;
     m_file.GetNonWhitespaceTokenAfter(m_item.paramEnd, &nextToken);
     if (m_item.identifier.line < nextToken.line)
     {
         PositionType startOfNextLine = {m_item.paramEnd.line + 1, 1};
-        size_t contentIndex = m_file.GetContentIndex(startOfNextLine);
-        UpdateData newRightBrace = {contentIndex, Insert, indent + "}\n", contentIndex};
-        m_file.m_updates[startOfNextLine] = newRightBrace;
+        m_file.InsertText(startOfNextLine, indent + "}\n");
     }
     else
-    {
-        size_t contentIndex = m_file.GetContentIndex(m_item.paramEnd) + 1;
-        UpdateData newRightBrace = {contentIndex, Insert, " }", contentIndex};
-        m_file.m_updates[m_item.paramEnd] = newRightBrace;
-    }
+        m_file.AppendText(m_item.paramEnd, " }");
 }
 
 /// Is the next non-white-space token a semicolon or comma? - Precondition: !Off()
@@ -467,6 +495,15 @@ CppFile::FunctionIterator::IsCompoundStatementBody() const
 {
     PositionType previousToken;
     boost::wave::token_id tokenId = m_file.GetNonWhitespaceTokenBefore(m_item.identifier, &previousToken);
+    if (boost::wave::T_RIGHTPAREN == tokenId)
+    {
+        boost::wave::token_id statementId = m_file.GetNonWhitespaceTokenBeforeOtherParen(previousToken);
+        return boost::wave::T_CATCH == statementId ||
+               boost::wave::T_FOR == statementId ||
+               boost::wave::T_IF == statementId ||
+               boost::wave::T_SWITCH == statementId ||
+               boost::wave::T_WHILE == statementId;
+    }
     return !m_file.HasUpdateBetween(previousToken, m_item.identifier) &&
            boost::wave::T_ELSE != tokenId &&
            boost::wave::T_LEFTBRACE != tokenId &&

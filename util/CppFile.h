@@ -40,7 +40,8 @@ protected: // Types
         StringType text;
         size_t     resumeAt;
     };
-    typedef std::map<PositionType, UpdateData> UpdateMap;
+    typedef std::pair<PositionType, int> UpdateKey;
+    typedef std::map<UpdateKey, UpdateData> UpdateMap;
     typedef std::vector<size_t> IndexStore;
 
 private: // Attributes
@@ -68,9 +69,12 @@ public: // Modifiers
     void Store(std::ostream& os);
 
 protected: // Support methods
+    void AppendText(const PositionType& lineCol, const StringType& text);
+    void InsertText(const PositionType& lineCol, const StringType& text);
     size_t GetContentIndex(const PositionType& index) const;
     boost::wave::token_id GetNonWhitespaceTokenAfter(const PositionType& index, PositionType* resultIndex = 0) const;
     boost::wave::token_id GetNonWhitespaceTokenBefore(const PositionType& index, PositionType* resultIndex = 0) const;
+    boost::wave::token_id GetNonWhitespaceTokenBeforeOtherParen(const PositionType& index, PositionType* resultIndex = 0) const;
     bool HasUpdateBetween(const PositionType& start, const PositionType& end) const;
     void SetLineIndex();
 };
