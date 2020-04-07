@@ -53,6 +53,11 @@ int ProcessLog4cxxMacros(CppFile& file, bool fix, bool fix_10_and_11)
     int macroCount = 0;
     int fixCount = 0;
     CppFile::FunctionIterator log4cxxMacro(file, "LOG4CXX_");
+    log4cxxMacro.AddExclusion("LOG4CXX_STR");
+    log4cxxMacro.AddExclusion("LOG4CXX_LIST");
+    log4cxxMacro.AddExclusion("LOG4CXX_PTR");
+    log4cxxMacro.AddExclusion("LOG4CXX_ENCODE");
+    log4cxxMacro.AddExclusion("LOG4CXX_DECODE");
     for (log4cxxMacro.Start(); !log4cxxMacro.Off(); log4cxxMacro.Forth())
     {
         ++macroCount;

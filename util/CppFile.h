@@ -3,6 +3,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/wave/token_ids.hpp>
 #include <boost/wave/wave_config.hpp>
+#include <log4cxx/logger.h>
 #include <map>
 
 class CppFile
@@ -85,10 +86,13 @@ public: // Types
         PositionType paramStart;
         PositionType paramEnd;
     };
+private: // Types
+    typedef std::vector<StringType> StringStore;
 
 private: // Attributes
     CppFile& m_file; //!< The owner of this
     StringType m_prefix; //!< Of the function of interest
+    StringStore m_exclusions; //!< Ignored function call identifier prefixes
     ItemType m_item; //!< The current item
     StringPositionMap::const_iterator m_identifier; //!< Position in the identifier map
     PositionStore::const_iterator m_instance; //!< Position in the instances of the current identifier
@@ -97,6 +101,10 @@ private: // Attributes
 public: // ...structors
     /// An Off() iterator for function call names starting with \c prefix
     FunctionIterator(CppFile& file, const StringType& prefix);
+
+public: // Property modifiers
+    /// Skip function calls matching \c identifierPrefix
+    void AddExclusion(const StringType& identifierPrefix);
 
 public: // Accessors
     /// Is the next non-white-space token a semicolon or comma? - Precondition: !Off()
@@ -133,6 +141,9 @@ protected: // Support methods
 
     /// Move to the first instance of the selected identifier
     void StartInstance();
+
+private: // Class data
+    static log4cxx::LoggerPtr m_log;
 };
 
 #endif // !defined(CPP_FILE_INCLUDED)

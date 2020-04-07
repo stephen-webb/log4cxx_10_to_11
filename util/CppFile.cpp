@@ -1,7 +1,6 @@
 #include "CppFile.h"
 #include <fstream>
 #include <string>
-#include <log4cxx/logger.h>
 #include <ctype.h>
 
 #ifdef _MSC_VER
@@ -378,6 +377,9 @@ CppFile::Store(std::ostream& os)
 ///////////////////////////////////////////////////////////////////////////////
 // FunctionIterator implementation
 
+    log4cxx::LoggerPtr
+CppFile::FunctionIterator::m_log(log4cxx::Logger::getLogger("FunctionIterator"));
+
 /// An Off() iterator for function call names starting with \c prefix
 CppFile::FunctionIterator::FunctionIterator(CppFile& file, const StringType& prefix)
     : m_file(file)
@@ -385,11 +387,19 @@ CppFile::FunctionIterator::FunctionIterator(CppFile& file, const StringType& pre
     , m_identifier(m_file.m_identiferPositions.end())
 {}
 
+/// Skip function calls matching \c identifierPrefix
+    void
+CppFile::FunctionIterator::AddExclusion(const StringType& identifierPrefix)
+{
+    LOG4CXX_DEBUG(m_log, "AddExclusion: " << identifierPrefix);
+    m_exclusions.push_back(identifierPrefix);
+}
+
 /// Add a semicolan after the closing parenthesis
     void
 CppFile::FunctionIterator::AddSemicolon()
 {
-    LOG4CXX_DEBUG(log_s, "AddSemicolon: " << m_item.paramEnd);
+    LOG4CXX_DEBUG(m_log, "AddSemicolon: " << m_item.paramEnd);
     size_t contentIndex = m_file.GetContentIndex(m_item.paramEnd) + 1;
     UpdateData newSemicolon = {contentIndex, Insert, ";", contentIndex};
     m_file.m_updates[m_item.paramEnd] = newSemicolon;
@@ -399,7 +409,7 @@ CppFile::FunctionIterator::AddSemicolon()
     void
 CppFile::FunctionIterator::InsertBraces()
 {
-    LOG4CXX_DEBUG(log_s, "InsertBraces: " << m_item.identifier << " to " << m_item.paramEnd);
+    LOG4CXX_DEBUG(m_log, "InsertBraces: " << m_item.identifier << " to " << m_item.paramEnd);
     PositionType previousToken;
     m_file.GetNonWhitespaceTokenBefore(m_item.identifier, &previousToken);
     StringType indent;
@@ -501,7 +511,7 @@ CppFile::FunctionIterator::SetItem()
     if (m_file.m_parenMate.end() == closeParen)
         return false;
     m_item.paramEnd = closeParen->second;
-    LOG4CXX_DEBUG(log_s, m_identifier->first
+    LOG4CXX_DEBUG(m_log, m_identifier->first
         << " at " << m_item.identifier
         << " to " << m_item.paramEnd
         );
@@ -512,7 +522,7 @@ CppFile::FunctionIterator::SetItem()
     void
 CppFile::FunctionIterator::Start()
 {
-    LOG4CXX_DEBUG(log_s, "Start: " << m_prefix);
+    LOG4CXX_DEBUG(m_log, "Start: " << m_prefix);
     m_identifier = m_file.m_identiferPositions.lower_bound(m_prefix);
     StartInstance();
 }
@@ -523,13 +533,20 @@ CppFile::FunctionIterator::StartInstance()
 {
     while (!Off())
     {
-        m_instance = m_identifier->second.begin();
-        m_instanceEnd = m_identifier->second.end();
-        while (!OffInstance())
+        LOG4CXX_TRACE(m_log, m_identifier->first);
+        if (m_exclusions.end() == std::find_if(m_exclusions.begin(), m_exclusions.end(),
+            [this](const StringType& prefix) -> bool
+                { return 0 == m_identifier->first.compare(0, prefix.size(), prefix); }
+            ))
         {
-            if (SetItem())
-                return;
-            ++m_instance;
+            m_instance = m_identifier->second.begin();
+            m_instanceEnd = m_identifier->second.end();
+            while (!OffInstance())
+            {
+                if (SetItem())
+                    return;
+                ++m_instance;
+            }
         }
         ++m_identifier;
     }
