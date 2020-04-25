@@ -20,6 +20,9 @@
 // The following file needs to be included only once throughout the whole program.
 #include <boost/wave/cpplexer/re2clex/cpp_re2c_lexer.hpp>
 
+    static log4cxx::LoggerPtr
+log_s(log4cxx::Logger::getLogger("CppFile"));
+
 /// Processing hooks that enable single file processing
 class CppFile::CustomDirectivesHooks
     : public boost::wave::context_policies::default_preprocessing_hooks
@@ -106,9 +109,6 @@ operator<<(std::ostream& stream, ContextType::iterator_type const& pItem)
 
 ///////////////////////////////////////////////////////////////////////////////
 //  CppFile implementation
-
-    static log4cxx::LoggerPtr
-log_s(log4cxx::Logger::getLogger("CppFile"));
 
 // Put \c item onto \c os
     std::ostream&
