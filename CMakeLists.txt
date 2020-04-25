@@ -5,9 +5,11 @@ include(CTest)
 set(Boost_USE_STATIC_LIBS  ON)
 find_package(Boost COMPONENTS wave filesystem program_options unit_test_framework REQUIRED )
 message("-- Found Boost ${Boost_INCLUDE_DIR}")
-get_target_property(Boost_COMPILE_DEFINITIONS
-  Boost::disable_autolinking INTERFACE_COMPILE_DEFINITIONS
-)
+if(WIN32)
+  get_target_property(Boost_COMPILE_DEFINITIONS
+    Boost::disable_autolinking INTERFACE_COMPILE_DEFINITIONS
+  )
+endif()
 find_package(log4cxx 0.11 REQUIRED )
 get_target_property(LOG4CXX_DLL_PATH log4cxx IMPORTED_LOCATION_RELEASE)
 get_filename_component(LOG4CXX_FILE_DIR "${LOG4CXX_DLL_PATH}" PATH)
