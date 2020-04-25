@@ -1,9 +1,16 @@
 #define BOOST_TEST_MODULE log4cxx_10_to_111 test
-#define BOOST_TEST_NO_MAIN
-#define BOOST_TEST_ALTERNATIVE_INIT_API
 #include <boost/test/unit_test.hpp>
 #include <log4cxx/propertyconfigurator.h>
 #include "util/CppFile.h"
+
+struct Initialise_log4cxx
+{
+    Initialise_log4cxx()
+    {
+        log4cxx::PropertyConfigurator::configure("log4cxx_10_to_11.properties");
+    }
+};
+BOOST_GLOBAL_FIXTURE( Initialise_log4cxx );
 
 BOOST_AUTO_TEST_CASE( fixup_test )
 {
@@ -50,15 +57,4 @@ BOOST_AUTO_TEST_CASE( no_change_test )
     BOOST_CHECK_EQUAL(macroCount, 4);
     BOOST_CHECK_EQUAL(insertBraceCount, 0);
     BOOST_CHECK_EQUAL(terminateStatementCount, 2);
-}
-
-bool init_logger()
-{
-  log4cxx::PropertyConfigurator::configure("log4cxx_10_to_11.properties");
-  return true;
-}
-
-int main( int argc, char* argv[] )
-{
-    return ::boost::unit_test::unit_test_main( &init_logger, argc, argv );
 }

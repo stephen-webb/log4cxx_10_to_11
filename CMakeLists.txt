@@ -2,9 +2,16 @@ cmake_minimum_required(VERSION 3.13)
 project(log4cxx_10_to_11)
 include(CTest)
 
-set(Boost_USE_STATIC_LIBS  ON)  # only find static libs
+set(Boost_USE_STATIC_LIBS  ON)
 find_package(Boost COMPONENTS wave filesystem program_options unit_test_framework REQUIRED )
+message("-- Found Boost ${Boost_INCLUDE_DIR}")
+get_target_property(Boost_COMPILE_DEFINITIONS
+  Boost::disable_autolinking INTERFACE_COMPILE_DEFINITIONS
+)
 find_package(log4cxx 0.11 REQUIRED )
+get_target_property(LOG4CXX_DLL_PATH log4cxx IMPORTED_LOCATION_RELEASE)
+get_filename_component(LOG4CXX_FILE_DIR "${LOG4CXX_DLL_PATH}" PATH)
+message("-- Found log4cxx ${LOG4CXX_FILE_DIR}")
 
 # Add support for linking statically
 option(BUILD_SHARED_LIBS "Use dynamically linked runtime" ON)
@@ -22,8 +29,8 @@ add_subdirectory(util)
 add_executable(log4cxx_10_to_11
   log4cxx_10_to_11.cpp 
 )
-target_compile_definitions(log4cxx_10_to_11 PRIVATE $<TARGET_PROPERTY:log4cxx,INTERFACE_COMPILE_DEFINITIONS> BOOST_WAVE_STATIC_LINK)
-target_include_directories(log4cxx_10_to_11 PRIVATE ${Boost_INCLUDE_DIRS})
+target_compile_definitions(log4cxx_10_to_11 PRIVATE $<TARGET_PROPERTY:log4cxx,INTERFACE_COMPILE_DEFINITIONS> ${Boost_COMPILE_DEFINITIONS} BOOST_WAVE_STATIC_LINK)
+target_include_directories(log4cxx_10_to_11 PRIVATE $<TARGET_PROPERTY:log4cxx,INTERFACE_INCLUDE_DIRECTORIES> ${Boost_INCLUDE_DIRS})
 target_link_libraries(log4cxx_10_to_11 PRIVATE Util log4cxx ${Boost_LIBRARIES})
 
 if(BUILD_TESTING)
