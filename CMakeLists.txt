@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.13)
 project(log4cxx_10_to_11)
 include(CTest)
+if(EXISTS ${CMAKE_BINARY_DIR}/conan_paths.cmake)
+  include(${CMAKE_BINARY_DIR}/conan_paths.cmake)
+endif()
 
 set(Boost_USE_STATIC_LIBS  ON)
 find_package(Boost COMPONENTS wave filesystem program_options unit_test_framework REQUIRED )
@@ -26,8 +29,9 @@ if(WIN32 AND NOT BUILD_SHARED_LIBS)
     endif()
   endforeach()
 endif()
-add_subdirectory(util)
 
+# Building
+add_subdirectory(util)
 add_executable(log4cxx_10_to_11
   log4cxx_10_to_11.cpp 
 )
@@ -35,7 +39,28 @@ target_compile_definitions(log4cxx_10_to_11 PRIVATE $<TARGET_PROPERTY:log4cxx,IN
 target_include_directories(log4cxx_10_to_11 PRIVATE $<TARGET_PROPERTY:log4cxx,INTERFACE_INCLUDE_DIRECTORIES> ${Boost_INCLUDE_DIRS})
 target_link_libraries(log4cxx_10_to_11 PRIVATE Util log4cxx ${Boost_LIBRARIES})
 
+# Testing
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
+
+# Installation
+include(GNUInstallDirs)
+install(CODE [[
+  file(GET_RUNTIME_DEPENDENCIES
+    RESOLVED_DEPENDENCIES_VAR log4cxx_10_to_11_dependencies
+    UNRESOLVED_DEPENDENCIES_VAR log4cxx_10_to_11_unresolved
+    POST_EXCLUDE_REGEXES ^/lib ^/usr/lib ^/usr/local/lib
+    EXECUTABLES log4cxx_10_to_11
+    )
+  #message("log4cxx_10_to_11_dependencies=${log4cxx_10_to_11_dependencies}")
+  #message("log4cxx_10_to_11_unresoved=${log4cxx_10_to_11_unresolved}")
+  file(INSTALL ${log4cxx_10_to_11_dependencies}
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+    FOLLOW_SYMLINK_CHAIN
+  )
+]])
+install(TARGETS log4cxx_10_to_11
+  RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+)
 
